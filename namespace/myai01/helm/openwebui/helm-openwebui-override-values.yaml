@@ -1,0 +1,219 @@
+---
+## OpenWebUI with Ollama Helm Chart Override Values
+## Enhanced with detailed logging and resource configurations
+
+ollama:
+  ollama:
+    ## GPU configuration for Ollama
+    gpu:
+      enabled: true
+      type: 'nvidia'
+      number: 1
+    ## Models to pull on startup
+    models:
+      pull:
+        - qwen3:14b
+        - llama3.1:8b
+        - gemma3:12b
+        - deepseek-r1:14b
+    ## Resource limits for Ollama
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "4Gi"
+        nvidia.com/gpu: 1
+      limits:
+        cpu: "4000m"
+        memory: "8Gi"
+        nvidia.com/gpu: 1
+    ## Enable verbose logging
+    env:
+      - name: OLLAMA_DEBUG
+        value: "1"
+  ## Use NVIDIA runtime
+  runtimeClassName: nvidia
+  # Enable persistent storage
+  persistentVolume:
+    enabled: true
+    size: "20Gi"
+  ## Node affinity for GPU nodes
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: nvidia.com/gpu.present
+            operator: In
+            values:
+            - "true"
+          - key: nvidia.com/gpu.count
+            operator: Gt
+            values:
+            - "0"
+## Enable Apache Tika for document processing
+tika:
+  enabled: true
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+## Enable WebSocket support
+websocket:
+  enabled: true
+
+## Health check configuration
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  failureThreshold: 1
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+readinessProbe:
+  httpGet:
+    path: /health/db
+    port: http
+  failureThreshold: 1
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+startupProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 5
+  failureThreshold: 20
+  timeoutSeconds: 5
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: "http"
+
+    ## for LLMs with long response times
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" ##how long to wait for backend to send data
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600" ##how long to wait while sending data to client
+    nginx.ingress.kubernetes.io/proxy-body-size: "128m" ##max body size
+    nginx.ingress.kubernetes.io/proxy-buffering: "off" ##disable buffering for streaming responses
+    
+    ## For WebSocket support without snippets
+    nginx.ingress.kubernetes.io/websocket-services: "open-webui" ##enable websocket support
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$binary_remote_addr" ##determine which backend to use based on client IP
+    nginx.ingress.kubernetes.io/affinity: "cookie" ##enable sticky sessions
+    nginx.ingress.kubernetes.io/session-cookie-name: "route" ##name of the session
+    nginx.ingress.kubernetes.io/session-cookie-expires: "172800" ##cookie expiration time in seconds
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "172800" ##cookie max age in seconds
+  host: myai01.abiwot-lab.com
+  # tls: true
+  # existingSecret: "imported-abiwot-lab-cert" ##name of the secret containing the TLS certificate
+persistence:
+  storageClass: "local-path-retain"
+  
+  ## -- NetworkPolicy to prevent multiple 'myaixx' instances from communicating with each other
+  - apiVersion: projectcalico.org/v3
+    kind: GlobalNetworkPolicy
+    metadata:
+      name: block-myai-cross-namespace
+    spec:
+      selector: all()
+      types:
+      - Ingress
+      - Egress
+      ingress:
+      - action: Deny
+        source:
+          namespaceSelector: name matches '^myai.*'
+        destination:
+          namespaceSelector: name matches '^myai.*'
+        namespaceNotSelector: name == src_namespace
+      egress:
+      - action: Deny
+        source:
+          namespaceSelector: name matches '^myai.*' 
+        destination:
+          namespaceSelector: name matches '^myai.*'
+        namespaceNotSelector: name == src_namespace
+      - action: Allow  ##Allow all other traffic
+
+## -- Configure database URL, needed to work with Postgres
+databaseUrl: postgresql://open-webui:0p3n-w3bu!@open-webui-postgres:5432/open-webui
+
+## -- Postgresql configuration (see. https://artifacthub.io/packages/helm/bitnami/postgresql)
+postgresql:
+  enabled: true
+  
+  ## Recommend to use postgresql.existingSecret & postgresql.secretKeys to keep the password secret
+  auth:
+    database: open-webui
+    postgresPassword: 0p3n-w3bu!
+    username: open-webui
+    password: 0p3n-w3bu!
+  
+  ## Configure PostgreSQL with proper resources and logging
+  primary:
+    storageClass: "local-path-retain"
+    persistence:
+      size: "10Gi"
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    podAnnotations:
+      backup.kubernetes.io/type: "postgres"
+      backup.kubernetes.io/application: "openwebui"
+    
+    ## Enhanced PostgreSQL configuration for better logging and performance
+    extraEnvVars:
+      - name: POSTGRES_INITDB_ARGS
+        value: "--data-checksums"
+      - name: POSTGRESQL_LOG_HOSTNAME
+        value: "true"
+      - name: POSTGRESQL_LOG_CONNECTIONS
+        value: "true"
+      - name: POSTGRESQL_LOG_DISCONNECTIONS
+        value: "true"
+      - name: POSTGRESQL_CLIENT_MIN_MESSAGES
+        value: "log"
+      - name: POSTGRESQL_LOG_LINE_PREFIX
+        value: "%m [%p] %q%u@%d "
+    
+    ## PostgreSQL configuration for better logging
+    configuration: |
+      log_destination = 'stderr'
+      logging_collector = on
+      log_directory = 'log'
+      log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+      log_rotation_age = 1d
+      log_rotation_size = 100MB
+      log_min_duration_statement = 1000
+      log_checkpoints = on
+      log_connections = on
+      log_disconnections = on
+      log_lock_waits = on
+      log_temp_files = 0
+      log_autovacuum_min_duration = 0
+      log_error_verbosity = default
+
+## OpenWebUI application resources
+resources:
+  requests:
+    cpu: "200m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+## Enable verbose logging for OpenWebUI
+env:
+  - name: LOG_LEVEL
+    value: "debug"
+...

@@ -1,0 +1,25 @@
+---
+# ConfigMap for variables
+#
+# This ConfigMap contains the variables used in the backup scripts.
+# It is mounted in the backup container as an environment variable.
+# The backup scripts are run as a cron job.
+# The backup scripts are located in the /scripts directory of the container.
+# If you want the PostgreSQL backups to be stored externally, you need to set up an S3 bucket and provide the credentials within the secret
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-backup-scripts-variables
+  namespace: myai01
+data:
+  S3_ENDPOINT: "https://cdanas002.abiwot-lab.com:9000"
+  S3_BUCKET: "openwebui-backups"
+  S3_PATH: "postgresql"
+  S3_REGION: "ca-to-rack-1"
+  APP_TARGET: "openwebui" ##The name of the application to be used as the prefix for the backup files
+  POSTGRES_DB: "open-webui" ##DB name is from Helm chart when you deployed OWU
+  POSTGRES_HOST: "open-webui-postgres" ##DB host is the K8s service name of the PostgreSQL deployment
+  POSTGRES_PORT: "5432" ##DB port is the default PostgreSQL port
+  
+...

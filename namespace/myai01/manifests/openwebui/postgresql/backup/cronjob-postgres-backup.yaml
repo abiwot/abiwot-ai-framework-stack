@@ -1,0 +1,88 @@
+---
+# CronJob for scheduled backups
+#
+# This CronJob is designed to run every 4 hours and perform a backup of the PostgreSQL database.
+# It uses a custom backup script located in a ConfigMap and stores the backups in a PersistentVolumeClaim.
+# 
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup-cronjob
+  namespace: myai01
+  annotations:
+    description: "Scheduled PostgreSQL backup for OpenWebUI"
+    owner: "Platform Team"
+spec:
+  schedule: "0 */4 * * *"  ##Every 4 hours
+  successfulJobsHistoryLimit: 4 ##Keep the last 4 successful jobs
+  failedJobsHistoryLimit: 4 ##Keep the last 4 failed jobs
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800 ##30 minutes job timeout
+      template:
+        metadata:
+          annotations:
+            backup.kubernetes.io/type: "postgres"
+            backup.kubernetes.io/application: "openwebui"
+        spec:
+          containers:
+          - name: postgres-backup
+            image: ubuntu:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              # Enable verbose bash logging
+              set -x
+
+              # Install common packages
+              apt update
+              apt install -y --no-install-recommends curl wget unzip jq ca-certificates gnupg lsb-release python3 python3-pip
+              
+              # Configure and install latest Postgresql client tools
+              sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+              curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+              apt update
+              apt install -y postgresql-common postgresql-client
+
+              # Install AWS CLI
+              mkdir -p $HOME/aws && curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "$HOME/aws/awscliv2.zip"
+              cd $HOME/aws && unzip $HOME/aws/awscliv2.zip
+              $HOME/aws/aws/install
+
+              # APT cleanup
+              apt-get clean
+              rm -rf /var/lib/apt/lists*
+              
+              # Execute backup script with detailed logging
+              /scripts/backup.sh 2>&1 | tee /proc/1/fd/1
+
+            resources:
+              requests:
+                cpu: "100m"
+                memory: "256Mi"
+              limits:
+                cpu: "500m"
+                memory: "512Mi"
+            envFrom: ##Load environment variables from ConfigMap and Secret
+            - configMapRef:
+                name: postgres-backup-scripts-variables
+            - secretRef:
+                name: postgres-backup-secrets
+            volumeMounts:
+            - name: backup-scripts
+              mountPath: /scripts
+            - name: backup-storage
+              mountPath: /backups
+          volumes:
+          - name: backup-scripts
+            configMap:
+              name: postgres-backup-scripts
+              defaultMode: 0755
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: postgres-backup-pvc
+          restartPolicy: OnFailure
+...

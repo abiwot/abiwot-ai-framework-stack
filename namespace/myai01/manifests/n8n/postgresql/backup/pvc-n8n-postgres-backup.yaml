@@ -1,0 +1,27 @@
+---
+# PersistentVolumeClaim for PostgreSQL backups
+#
+# This PersistentVolumeClaim is used to request storage for PostgreSQL backups.
+# It is configured to use the local-path-retain storage class, which is suitable for
+# local development and testing environments. The claim requests 10Gi of storage
+# and is set to be accessed in ReadWriteOnce mode, meaning it can be mounted by a single
+# node at a time.
+# This storage is used to store backup files created by the PostgreSQL database,
+# when S3 target is not used/accessible.
+#
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: n8n-postgres-backup-pvc
+  namespace: myai01
+  annotations:
+    description: "Persistent storage for PostgreSQL backups"
+    owner: "Platform Team"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-retain
+  resources:
+    requests:
+      storage: 10Gi
+...

@@ -1,0 +1,362 @@
+---
+# ConfigMap for improved PostgreSQL backup script
+#
+# This ConfigMap contains a shell script that performs PostgreSQL database backups
+# for n8n with enhanced features such as S3 connectivity checks, detailed logging,
+# automatic cleanup of old backups, and structured functions for maintainability.
+# The script is designed to be used in a Kubernetes environment and is compatible with
+# various S3-compatible storage solutions, including AWS S3, MinIO, and Azure Blob Storage.
+# The script is intended to be mounted into a Kubernetes pod for execution.
+# It is important to ensure that the necessary environment variables are set in the pod
+# for the script to function correctly via:
+# configmap-n8n-postgres-backup-scripts-variables.yaml
+# secret-n8n-postgres-backup-secrets.yaml
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: n8n-postgres-backup-scripts
+  namespace: myai01
+data:
+  backup.sh: |
+    #!/bin/bash
+    
+    #############################################################
+    # n8n PostgreSQL Backup Script
+    #
+    # This script performs PostgreSQL database backups for n8n
+    # with fallback to local storage when S3 is unavailable.
+    #
+    # Features:
+    # - Generic S3 client compatible with AWS, MinIO, Azure, etc.
+    # - S3 connectivity check with fallback to local storage
+    # - Detailed logging for troubleshooting
+    # - Automatic cleanup of old backups
+    # - Structured with functions for maintainability
+    #############################################################
+    
+    # Enable verbose logging
+    set -o pipefail
+    
+    #############################################################
+    # GLOBAL VARIABLES
+    #############################################################
+    NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    BACKUP_FILE="${APP_TARGET}-${NAMESPACE}-backup-${TIMESTAMP}.sql.gz"
+    TEMP_BACKUP_PATH="/tmp/${BACKUP_FILE}"
+    S3_BUCKET="${S3_BUCKET}"
+    S3_PREFIX="${S3_PATH:-postgresql}/${NAMESPACE}"
+    S3_FULL_PATH="${S3_PREFIX}/${BACKUP_FILE}"
+    S3_ENDPOINT="${S3_ENDPOINT}"
+    S3_REGION="${S3_REGION:-us-east-1}"
+    S3_AVAILABLE=false
+    BACKUP_SUCCESS=false
+    START_TIME=$(date +%s)
+    RETENTION_DAYS="${RETENTION_DAYS:-7}"
+    
+    #############################################################
+    # LOGGING FUNCTIONS
+    #############################################################
+    
+    # Function to log messages with timestamp and log level
+    log() {
+      local level=$1
+      local message=$2
+      local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+      echo "[$timestamp] [$level] $message"
+    }
+    
+    log_info() {
+      log "INFO" "$1"
+    }
+    
+    log_warn() {
+      log "WARNING" "$1"
+    }
+    
+    log_error() {
+      log "ERROR" "$1"
+    }
+    
+    log_success() {
+      log "SUCCESS" "$1"
+    }
+    
+    #############################################################
+    # UTILITY FUNCTIONS
+    #############################################################
+    
+    # Function to check if command executed successfully
+    check_result() {
+      if [ $? -ne 0 ]; then
+        log_error "$1"
+        return 1
+      else
+        log_success "$2"
+        return 0
+      fi
+    }
+    
+    # Function to calculate elapsed time
+    elapsed_time() {
+      local end_time=$(date +%s)
+      local elapsed=$((end_time - START_TIME))
+      log_info "Operation completed in ${elapsed} seconds"
+    }
+    
+    #############################################################
+    # S3 CONFIGURATION AND CONNECTIVITY FUNCTIONS
+    #############################################################
+    
+    # Function to configure AWS CLI for S3 access
+    configure_s3_client() {
+      log_info "Configuring AWS CLI for S3 access with endpoint: ${S3_ENDPOINT}"
+      
+      # Create AWS CLI config directory if it doesn't exist
+      mkdir -p ~/.aws
+      
+      # Write credentials file
+      cat > ~/.aws/credentials << EOF
+    [default]
+    aws_access_key_id = ${S3_ACCESS_KEY}
+    aws_secret_access_key = ${S3_SECRET_KEY}
+    EOF
+    
+      # Write config file with custom endpoint for non-AWS S3 providers
+      if [ -n "${S3_ENDPOINT}" ]; then
+        log_info "Using custom S3 endpoint: ${S3_ENDPOINT}"
+        cat > ~/.aws/config << EOF
+    [default]
+    region = ${S3_REGION}
+    s3 =
+        endpoint_url = ${S3_ENDPOINT}
+        addressing_style = path
+    output=json
+    EOF
+      else
+        # Default AWS config
+        cat > ~/.aws/config << EOF
+    [default]
+    region = ${S3_REGION}
+    EOF
+      fi
+      
+      check_result "Failed to configure S3 client." "Successfully configured S3 client."
+      return $?
+    }
+    
+    # Function to check S3 connectivity and bucket existence
+    check_s3_connectivity() {
+      log_info "Checking S3 connectivity..."
+      
+      # First configure the AWS CLI
+      if ! configure_s3_client; then
+        log_error "Failed to configure S3 client. Check credentials and endpoint."
+        return 1
+      fi
+      
+      # Build the appropriate aws s3 command with endpoint if needed
+      local aws_cmd="aws s3"
+      if [ -n "${S3_ENDPOINT}" ]; then
+        aws_cmd="aws s3 --endpoint-url=${S3_ENDPOINT}"
+      fi
+      
+      # Check if bucket exists
+      if ${aws_cmd} ls "s3://${S3_BUCKET}" &>/dev/null; then
+        log_info "S3 bucket '${S3_BUCKET}' exists and is accessible."
+        S3_AVAILABLE=true
+        return 0
+      else
+        log_warn "S3 bucket '${S3_BUCKET}' does not exist or is not accessible. Attempting to create..."
+        if ${aws_cmd} mb "s3://${S3_BUCKET}" &>/dev/null; then
+          log_success "Successfully created bucket '${S3_BUCKET}'."
+          S3_AVAILABLE=true
+          return 0
+        else
+          log_error "Failed to create S3 bucket. Will store backup locally only."
+          S3_AVAILABLE=false
+          return 1
+        fi
+      fi
+    }
+    
+    #############################################################
+    # BACKUP FUNCTIONS
+    #############################################################
+    
+    # Function to perform PostgreSQL database backup
+    perform_database_backup() {
+      log_info "Starting PostgreSQL backup for database: ${POSTGRES_DB}"
+      log_info "Using host: ${POSTGRES_HOST}:${POSTGRES_PORT}"
+      
+      PGPASSWORD=${POSTGRES_PASSWORD} pg_dump -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} \
+        -U ${POSTGRES_USER} -d ${POSTGRES_DB} | gzip > ${TEMP_BACKUP_PATH}
+      
+      if check_result "Database backup failed." "Database backup completed successfully: ${TEMP_BACKUP_PATH}"; then
+        log_info "Backup file size: $(du -h ${TEMP_BACKUP_PATH} | cut -f1)"
+        BACKUP_SUCCESS=true
+        return 0
+      else
+        BACKUP_SUCCESS=false
+        return 1
+      fi
+    }
+    
+    # Function to upload backup to S3
+    upload_to_s3() {
+      log_info "Uploading backup to S3 path: ${S3_BUCKET}/${S3_FULL_PATH}"
+      
+      # Build the appropriate aws s3 command with endpoint if needed
+      local aws_cmd="aws s3"
+      if [ -n "${S3_ENDPOINT}" ]; then
+        aws_cmd="aws s3 --endpoint-url=${S3_ENDPOINT}"
+      fi
+      
+      ${aws_cmd} cp ${TEMP_BACKUP_PATH} "s3://${S3_BUCKET}/${S3_FULL_PATH}"
+      
+      if check_result "Failed to upload backup to S3." "Successfully uploaded backup to S3: ${S3_BUCKET}/${S3_FULL_PATH}"; then
+        return 0
+      else
+        return 1
+      fi
+    }
+    
+    # Function to clean up old S3 backups
+    cleanup_old_s3_backups() {
+      log_info "Cleaning up old backups (keeping last ${RETENTION_DAYS} days)..."
+      
+      local cutoff_date=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
+      log_info "Cutoff date for backup retention: ${cutoff_date}"
+      
+      # Build the appropriate aws s3 command with endpoint if needed
+      local aws_cmd="aws s3"
+      if [ -n "${S3_ENDPOINT}" ]; then
+        aws_cmd="aws s3 --endpoint-url=${S3_ENDPOINT}"
+      fi
+      
+      # List all backup files
+      local backup_list=$(${aws_cmd} ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | grep "\.sql\.gz")
+      
+      if [ -z "${backup_list}" ]; then
+        log_info "No backups found in S3 to evaluate for cleanup."
+        return 0
+      fi
+      
+      # Process each backup file and delete if older than cutoff
+      echo "${backup_list}" | while read -r line; do
+        # Extract the filename from the listing
+        local filename=$(echo "$line" | awk '{print $4}')
+        local file_basename=$(basename "${filename}")
+        
+        # Extract date part from filename (assuming format like app_target-namespace-backup-YYYYMMDD-HHMMSS.sql.gz)
+        local file_date=$(echo "${file_basename}" | grep -o '[0-9]\{8\}-[0-9]\{6\}' | cut -d'-' -f1)
+        
+        if [ -n "${file_date}" ] && [ "${file_date}" -lt "${cutoff_date}" ]; then
+          log_info "Deleting old backup: ${filename} (date: ${file_date}, cutoff: ${cutoff_date})"
+          ${aws_cmd} rm "s3://${S3_BUCKET}/${S3_PREFIX}/${file_basename}"
+          check_result "Failed to delete old backup: ${file_basename}" "Successfully deleted old backup: ${file_basename}"
+        else
+          log_info "Keeping backup: ${file_basename} (date: ${file_date} is newer than cutoff: ${cutoff_date})"
+        fi
+      done
+      
+      return 0
+    }
+    
+    # Function to store backup locally
+    store_backup_locally() {
+      log_info "Storing backup locally in persistent storage"
+      
+      mkdir -p /backups
+      cp ${TEMP_BACKUP_PATH} /backups/
+      
+      if check_result "Failed to copy backup to persistent storage." "Copied backup to persistent storage: /backups/${BACKUP_FILE}"; then
+        # Clean up old local backups too
+        cleanup_old_local_backups
+        return 0
+      else
+        return 1
+      fi
+    }
+    
+    # Function to clean up old local backups
+    cleanup_old_local_backups() {
+      log_info "Cleaning up old local backups (keeping last ${RETENTION_DAYS} days)..."
+      
+      if [ ! -d "/backups" ]; then
+        log_info "No local backup directory exists yet."
+        return 0
+      fi
+      
+      local cutoff_date=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
+      log_info "Cutoff date for backup retention: ${cutoff_date}"
+      
+      find /backups -name "${APP_TARGET}-${NAMESPACE}-backup-*.sql.gz" | while read backup_file; do
+        local file_basename=$(basename "${backup_file}")
+        local file_date=$(echo "${file_basename}" | grep -o '[0-9]\{8\}-[0-9]\{6\}' | cut -d'-' -f1)
+        
+        if [ -n "${file_date}" ] && [ "${file_date}" -lt "${cutoff_date}" ]; then
+          log_info "Deleting old local backup: ${backup_file}"
+          rm "${backup_file}"
+          check_result "Failed to delete old local backup: ${backup_file}" "Successfully deleted old local backup: ${backup_file}"
+        fi
+      done
+      
+      return 0
+    }
+    
+    #############################################################
+    # MAIN EXECUTION
+    #############################################################
+    
+    log_info "=== Starting ${APP_TARGET} PostgreSQL Backup Process ==="
+    log_info "Namespace: ${NAMESPACE}"
+    log_info "Timestamp: ${TIMESTAMP}"
+    log_info "Backup file: ${BACKUP_FILE}"
+    log_info "S3 Endpoint: ${S3_ENDPOINT:-'Using default AWS S3'}"
+    log_info "S3 Region: ${S3_REGION}"
+    log_info "S3 Bucket: ${S3_BUCKET}"
+    log_info "S3 Path: ${S3_FULL_PATH}"
+    log_info "Retention period: ${RETENTION_DAYS} days"
+    
+    # Step 1: Check S3 connectivity
+    check_s3_connectivity
+    
+    # Step 2: Perform database backup
+    if ! perform_database_backup; then
+      log_error "Backup process failed. Exiting."
+      exit 1
+    fi
+    
+    # Step 3: Handle backup storage based on S3 availability
+    case $S3_AVAILABLE in
+      true)
+        # Upload to S3
+        if upload_to_s3; then
+          # Clean up old backups if upload successful
+          cleanup_old_s3_backups
+        else
+          # Fallback to local storage if S3 upload fails
+          log_warn "S3 upload failed. Falling back to local storage."
+          store_backup_locally
+        fi
+        ;;
+      false)
+        # Store locally when S3 is not available
+        log_warn "S3 is not available. Using local storage only."
+        store_backup_locally
+        ;;
+    esac
+    
+    # Log completion time
+    elapsed_time
+    log_info "=== Backup process completed ==="
+    
+    # Clean up temporary file
+    if [ -f "${TEMP_BACKUP_PATH}" ]; then
+      log_info "Cleaning up temporary backup file"
+      rm ${TEMP_BACKUP_PATH}
+    fi
+    
+    exit 0

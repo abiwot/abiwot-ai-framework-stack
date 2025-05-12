@@ -1,0 +1,86 @@
+---
+# Deployment for PostgreSQL Restore Utility
+#
+# This deployment is designed to be a manual restore utility for PostgreSQL databases.
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n-restore
+  namespace: myai01
+  labels:
+    app: n8n-restore
+  annotations:
+    description: "PostgreSQL restore utility for n8n"
+    owner: "Platform Team"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: n8n-restore
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: n8n-restore
+      annotations:
+        backup.kubernetes.io/type: "postgres"
+        backup.kubernetes.io/application: "n8n"
+        backup.kubernetes.io/mode: "restore"
+    spec:
+      containers:
+        - name: postgres-restore
+          image: ubuntu:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              # Enable verbose bash logging
+              set -x
+
+              # Install common packages
+              apt update
+              apt install -y --no-install-recommends curl wget unzip jq ca-certificates gnupg lsb-release python3 python3-pip
+              
+              # Configure and install latest Postgresql client tools
+              sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+              curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+              apt update
+              apt install -y postgresql-common postgresql-client
+
+              # Install AWS CLI
+              mkdir -p $HOME/aws && curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "$HOME/aws/awscliv2.zip"
+              cd $HOME/aws && unzip $HOME/aws/awscliv2.zip
+              $HOME/aws/aws/install
+
+              # APT cleanup
+              apt-get clean
+              rm -rf /var/lib/apt/lists*
+              
+              # Keep container running for manual PostgreSQL restores
+              while true; do sleep 30; done
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          envFrom:
+            - configMapRef:
+                name: n8n-postgres-backup-scripts-variables
+            - secretRef:
+                name: n8n-postgres-backup-secrets
+          volumeMounts:
+            - name: backup-storage
+              mountPath: /backups
+            - name: scripts-dir
+              mountPath: /scripts
+      volumes:
+        - name: backup-storage
+          persistentVolumeClaim:
+            claimName: n8n-postgres-backup-pvc
+        - name: scripts-dir
+          emptyDir: {}
+...

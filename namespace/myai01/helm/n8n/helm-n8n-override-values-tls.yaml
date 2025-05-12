@@ -1,0 +1,135 @@
+## Need to remove comments above the YAML start indicator
+## FOR FUTURE REFERENCE:
+---
+log:
+  output:
+    - console
+    - file
+db:
+  type: postgresdb
+main:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+  extraEnvVars:
+    N8N_PUSH_BACKEND: "websocket"
+    N8N_PROXY_HOPS: 2
+    N8N_TRUST_PROXY: "true"
+    N8N_EDITOR_BASE_URL: "https://myai01-n8n.abiwot-lab.com/"
+worker:
+  mode: queue
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 2
+    behavior:
+      scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+      scaleUp:
+        stabilizationWindowSeconds: 0
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 15
+          - type: Pods
+            value: 4
+            periodSeconds: 15
+        selectPolicy: Max
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+  extraEnvVars:
+    N8N_PUSH_BACKEND: "websocket"
+    N8N_PROXY_HOPS: 2
+    N8N_TRUST_PROXY: "true"
+    N8N_EDITOR_BASE_URL: "https://myai01-n8n.abiwot-lab.com/"
+webhook:
+  mode: queue
+  url: "https://myai01-n8n-webhook.abiwot-lab.com/"
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 2
+    behavior:
+      scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+      scaleUp:
+        stabilizationWindowSeconds: 0
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 15
+          - type: Pods
+            value: 4
+            periodSeconds: 15
+        selectPolicy: Max
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+  extraEnvVars:
+    N8N_PUSH_BACKEND: "websocket"
+    N8N_PROXY_HOPS: 2
+    N8N_TRUST_PROXY: "true"
+    N8N_EDITOR_BASE_URL: "https://myai01-n8n.abiwot-lab.com/"
+taskRunners:
+  mode: external
+timezone: "America/Toronto"
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: "http"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1" #use HTTP/1.1 for backend communication
+
+    # for streams with long response times
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" #how long to wait for backend to send data
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600" #how long to wait while sending data to client
+    nginx.ingress.kubernetes.io/proxy-body-size: "128m" #max body size
+    nginx.ingress.kubernetes.io/proxy-buffering: "off" #disable buffering for streaming responses
+
+    # For WebSocket support without snippets
+    nginx.ingress.kubernetes.io/websocket-services: "n8n,n8n-webhook" #enable websocket support
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$binary_remote_addr" #determine which backend to use based on client IP
+    nginx.ingress.kubernetes.io/affinity: "cookie" #enable sticky sessions
+    nginx.ingress.kubernetes.io/session-cookie-name: "route" #name of the session
+    nginx.ingress.kubernetes.io/session-cookie-expires: "172800" #cookie expiration time in seconds
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "172800" #cookie max age in seconds
+
+  hosts:
+    - host: myai01-n8n.abiwot-lab.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: imported-abiwot-lab-cert # created with OpenWebUI Helm Chart
+      hosts:
+        - myai01-n8n.abiwot-lab.com
+        # - myai01-n8n-webhook.abiwot-lab.com
+redis:
+  enabled: true
+  master:
+    persistence:
+      enabled: true
+postgresql:
+  enabled: true

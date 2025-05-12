@@ -1,0 +1,24 @@
+## Need to remove comments above the YAML start indicator
+## FOR FUTURE REFERENCE:
+---
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+persistence:
+  annotations:
+    storageVolumeName: qdrant-storage
+    storageSubPath: ""
+    storeageClassName: "local-path-retain"
+snapshotPersistence:
+  enabled: true
+  annotations:
+    storageVolumeName: qdrant-snapshots
+    storageSubPath: ""
+    storeageClassName: "local-path-retain"
+apiKey: true
+readOnlyApiKey: true
+...
