@@ -25,13 +25,14 @@ The deployment consists of the following components:
 1. **Deploy OpenWebUI with Ollama**
 
    ```bash
-   # Create namespace if it doesn't exist
-   kubectl create namespace myai01
+   # Add Helm repo
+   helm repo add open-webui https://helm.openwebui.com/
+   helm repo update
 
    # Deploy using Helm
    helm upgrade --install openwebui ./namespace/myai01/helm/openwebui \
      -f ./namespace/myai01/helm/openwebui/helm-openwebui-override-values-tls.yaml \
-     -n myai01
+     -n myai01 --create-namespace
    ```
 
 2. **Verify Deployment**
