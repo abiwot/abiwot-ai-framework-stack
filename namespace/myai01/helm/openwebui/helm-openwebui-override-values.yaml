@@ -13,9 +13,9 @@ ollama:
     models:
       pull:
         - qwen3:14b
-        - llama3.1:8b
-        - gemma3:12b
-        - deepseek-r1:14b
+#        - llama3.1:8b
+#        - gemma3:12b
+#        - deepseek-r1:14b
     ## Resource limits for Ollama
     resources:
       requests:
@@ -60,6 +60,15 @@ tika:
     limits:
       cpu: "1000m"
       memory: "1Gi"
+
+## Ollama API endpoints
+  ## -- These Urls will be externally accessed via LB and Ingress
+  ## -- We will use the external LB to accept the URL and direct it to the Ingress
+  ## -- additional ingress is required to support this.  See `Extra Resources` section below
+  ## -- Pay special attention if you are using HTTPS through the Ingress or just to the external LB
+  ## -- These APIs will ultimately terminate at the `open-webui-ollama` pod on port 11434
+ollamaUrls:
+  - "https://myai01-ollama-api.abiwot-lab.com"
 
 ## Enable WebSocket support
 websocket:
@@ -114,6 +123,47 @@ ingress:
   # existingSecret: "imported-abiwot-lab-cert" ##name of the secret containing the TLS certificate
 persistence:
   storageClass: "local-path-retain"
+
+## OpenAI API URLs
+  ## -- These Urls will be externally accessed via LB and Ingress
+  ## -- We will use the external LB to accept the URL and direct it to the Ingress
+  ## -- additional ingress is required to support this.  See `Extra Resources` section below
+  ## -- Pay special attention if you are using HTTPS through the Ingress or just to the external LB
+  ## -- These APIs will ultimately terminate at the `open-webui-pipelines` pod on port 9099
+openaiBaseApiUrls:
+  - "https://myai01-openai-pipelines.abiwot-lab.com"
+
+## -- Extra resources to deploy with OpenWebUI
+extraResources:
+  # ## -- TLS secret for abiwot-lab.com
+  # ## -- This is a dummy certificate, you should replace it with your own certificate
+  # - apiVersion: v1
+  #   kind: Secret
+  #   metadata:
+  #     name: imported-abiwot-lab-cert
+  #     namespace: myai01
+  #   type: kubernetes.io/tls
+  #   data:
+  #     tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURnVENDQXdlZ0F3SUJBZ0lTQTZOL3lPVythdDA1cVVGTUdnR3lkdzJYTUFvR0NDcUdTTTQ5QkFNRE1ESXgKQ3pBSkJnTlZCQVlUQWxWVE1SWXdGQVlEVlFRS0V3MU1aWFFuY3lCRmJtTnllWEIwTVFzd0NRWURWUVFERXdKRgpOakFlRncweU5UQXpNVEF3TnpVeE5UZGFGdzB5TlRBMk1EZ3dOelV4TlRaYU1Cc3hHVEFYQmdOVkJBTU1FQ291CllXSnBkMjkwTFd4aFlpNWpiMjB3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPUFFNQkJ3TkNBQVNJeFBXN0pxbEMKM1RyeFMveDQyOS9CWGdEWmFMa20wRml2dUtkNjRjSFhmTVhiaTFpaVhZcHc5dFg4a2p3QjBDdEJITEx2S0tPTgpOVnlzTVBobmtINGNvNElDRWpDQ0FnNHdEZ1lEVlIwUEFRSC9CQVFEQWdlQU1CMEdBMVVkSlFRV01CUUdDQ3NHCkFRVUZCd01CQmdnckJnRUZCUWNEQWpBTUJnTlZIUk1CQWY4RUFqQUFNQjBHQTFVZERnUVdCQlF5cERuaGxXNEQKeVJCQkVaZVZXbUV6MW51b0F6QWZCZ05WSFNNRUdEQVdnQlNUSjBhWUE2bFJhSTZZMXNSQ1NOc2p2MWlVMGpCVgpCZ2dyQmdFRkJRY0JBUVJKTUVjd0lRWUlLd1lCQlFVSE1BR0dGV2gwZEhBNkx5OWxOaTV2TG14bGJtTnlMbTl5Clp6QWlCZ2dyQmdFRkJRY3dBb1lXYUhSMGNEb3ZMMlUyTG1rdWJHVnVZM0l1YjNKbkx6QWJCZ05WSFJFRUZEQVMKZ2hBcUxtRmlhWGR2ZEMxc1lXSXVZMjl0TUJNR0ExVWRJQVFNTUFvd0NBWUdaNEVNQVFJQk1JSUJCQVlLS3dZQgpCQUhXZVFJRUFnU0I5UVNCOGdEd0FIWUFvdU1LNUVYdnZhMmJmamp0UjJkM1U5ZUNXNFNVMXl0ZUd5ekV1VkNrClIrY0FBQUdWZnorUlJRQUFCQU1BUnpCRkFpQVh5eXVUS095MXEzbWM1aTJ2UVhOb3k4UUlVR0ZWbFVjK2pUUU0KNktIWXF3SWhBT1NLeUdGRHYwZTBrQkFFZ2VrWHB1ZDRmOFRDOGpCMjNQNkNUTno5SUo3V0FIWUF6UHNQYW9WeApDV1grbFp0VHp1bXlmQ0xwaFZ3Tmw0MjJxWDVVd1A1TURiQUFBQUdWZnorUnVnQUFCQU1BUnpCRkFpRUE4Ykp6CnlxUXR1TTFWRU5jREFlUDlBdFkvYXZMSlFhWWQwMEN0TzFRcHJkQUNJRWVmZy85QnUweHRBWGFLb1NqbE9BT3kKZE5OUmd4bDZNdXBxV1F1Z0tvRTVNQW9HQ0NxR1NNNDlCQU1EQTJnQU1HVUNNUUMrcnduSWxadWs3OHo4SGxFTwozU3BmRXA5QmxSelcvZTJjRHRaZ05SbWlKZkN4QWZXRU5pWlE2VG9zYUkyOFIwWUNNQlpnMVRkYm00SG81Tm1hCmZFRUdEQmpybkZGNnFjZXJDdnVGZUpnSnVHNitWcHdtS05PNERlN2FzcEhnMStCeGVBPT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQotLS0tLUJFR0lOIENFUlRJRklDQVRFLS0tLS0KTUlJRVZ6Q0NBaitnQXdJQkFnSVJBTEJYUHBGemx5ZHcyN1NIeXpwRkt6Z3dEUVlKS29aSWh2Y05BUUVMQlFBdwpUekVMTUFrR0ExVUVCaE1DVlZNeEtUQW5CZ05WQkFvVElFbHVkR1Z5Ym1WMElGTmxZM1Z5YVhSNUlGSmxjMlZoCmNtTm9JRWR5YjNWd01SVXdFd1lEVlFRREV3eEpVMUpISUZKdmIzUWdXREV3SGhjTk1qUXdNekV6TURBd01EQXcKV2hjTk1qY3dNekV5TWpNMU9UVTVXakF5TVFzd0NRWURWUVFHRXdKVlV6RVdNQlFHQTFVRUNoTU5UR1YwSjNNZwpSVzVqY25sd2RERUxNQWtHQTFVRUF4TUNSVFl3ZGpBUUJnY3Foa2pPUFFJQkJnVXJnUVFBSWdOaUFBVFo4WjVHCmgvZ2hjV0NvSnV1aitybnEyaDI1RXFmVUp0bFJGTEZoZkhXV3Z5SUxPUi9WdnRFS1Jxb3RQRW9KaEM2K1FKVlYKNlJsQU4yWjE3VEpPZHdSSitIQjd3eGpuenZkeEVQNnNkTmdBMU8xdEhITVdNeENjT3JMcWJHTDB2YmlqZ2ZndwpnZlV3RGdZRFZSMFBBUUgvQkFRREFnR0dNQjBHQTFVZEpRUVdNQlFHQ0NzR0FRVUZCd01DQmdnckJnRUZCUWNECkFUQVNCZ05WSFJNQkFmOEVDREFHQVFIL0FnRUFNQjBHQTFVZERnUVdCQlNUSjBhWUE2bFJhSTZZMXNSQ1NOc2oKdjFpVTBqQWZCZ05WSFNNRUdEQVdnQlI1dEZubWU3Ymw1QUZ6Z0FpSXlCcFk5dW1iYmpBeUJnZ3JCZ0VGQlFjQgpBUVFtTUNRd0lnWUlLd1lCQlFVSE1BS0dGbWgwZEhBNkx5OTRNUzVwTG14bGJtTnlMbTl5Wnk4d0V3WURWUjBnCkJBd3dDakFJQmdabmdRd0JBZ0V3SndZRFZSMGZCQ0F3SGpBY29CcWdHSVlXYUhSMGNEb3ZMM2d4TG1NdWJHVnUKWTNJdWIzSm5MekFOQmdrcWhraUc5dzBCQVFzRkFBT0NBZ0VBZll0N1NpQTFzZ1dHQ0lwdW5rNDZyNEFFeElSYwpNeGtLZ1VoTmxycnYxQjIxaE9hWE4vNW1pRStMT1RicmNtVS9NOXl2QzZNVlk3MzBHTkZvTDhJaEo4ajh2ck9MCnBNWTIyT1A2YmFTMWs5WU1ydERUbHdKSG9HYnkwNFRoVFVlQkRrc1M5Uml1SHZpY1pxQmVkUWRJRjY1cFp1aHAKZURjR0JjTGlZYXNRci9FTzVneHh0THlUbWdzSFNPVlNCY0ZPbjlsZ3Y3TEVDUHE5aTdtZkgzbXB4Z3JSS1N4SApwT29aMEtYTWNCK2hIdXZsa2xIbnR2Y0kwbU1NUTBtaFlqNnF0TUZTdGtGMVJwQ0czSVBkSXdwVkNRcXU4R1Y3CnM4dWJrblJ6cyszQy9CbTE5UkZPb2lQcERrd3Z5TmZ2bVExNFhreXFxS0s1b1o4emhEMzJrRlJRa3hhOHVaU3UKaDRhVEltRnhrbnUzOXdhQnhJUlhFNGpLeGxBbVFjNFFqRlpvcTFLbVFxUWcwSi8xSkY4UmxGdkphczFWY2pMdgpZbHZVQjJ0Nm5wTzZvUWpCM2wrUE5mMERwUUg3aVV4M1d6NUFqUUNpNkwyNUZqeUUwNnE2QlovUWxtdFlkbC84ClpZYW80U1JxUEVzLzZjQWlGK1FmNXpnMlVrYVd0RHBobDFMS011VE5Mb3R2c1g5OUhQNjlWMmZhTnllZ29kUTAKTHlUQXByL3ZUMDFZUEU0NnZOc0RMZ0srNGNMNlRyekMvYTRXY21GNVNSSjkzOHpydi9kdUpITFhRSWt1NXYwKwpFd095NTlIZG0wUFQvRXIvODRkRFYwQ1NqZFIvMlh1Wk0za3B5c1NLTGdEMWNLaURBK0lSZ3VPREN4Zk85Y3lZCklnNDZ2OW1GbUJ2eUgwND0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+  #     tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ2RNZHFjTndOczFEU1hPNksKL2dzNHRQU1owTzVzQnh1TTZYOCtaMENHMDRtaFJBTkNBQVNJeFBXN0pxbEMzVHJ4Uy94NDI5L0JYZ0RaYUxrbQowRml2dUtkNjRjSFhmTVhiaTFpaVhZcHc5dFg4a2p3QjBDdEJITEx2S0tPTk5WeXNNUGhua0g0YwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==
+
+  # ## -- TLS certificate for abiwot-lab.com
+  # ## -- This is a dummy certificate, you should replace it with your own certificate
+  # - apiVersion: cert-manager.io/v1
+  #   kind: Certificate
+  #   metadata:
+  #     name: imported-abiwot-lab-cert
+  #     namespace: myai01
+  #   spec:
+  #     secretName: imported-abiwot-lab-cert
+  #     commonName: abiwot-lab.com
+  #     dnsNames:
+  #       - '*.abiwot-lab.com'  ##If you have a wildcard certificate
+  #     issuerRef:
+  #       ## This is required but won't be used for renewals
+  #       name: dummy-issuer
+  #       kind: ClusterIssuer
+  #       group: cert-manager.io
   
   ## -- NetworkPolicy to prevent multiple 'myaixx' instances from communicating with each other
   - apiVersion: projectcalico.org/v3
@@ -140,6 +190,82 @@ persistence:
           namespaceSelector: name matches '^myai.*'
         namespaceNotSelector: name == src_namespace
       - action: Allow  ##Allow all other traffic
+  
+  ## -- Ingress to expose Ollama API
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      annotations:
+        meta.helm.sh/release-name: open-webui
+        meta.helm.sh/release-namespace: myai01
+        nginx.ingress.kubernetes.io/affinity: cookie
+        nginx.ingress.kubernetes.io/backend-protocol: http
+        nginx.ingress.kubernetes.io/proxy-body-size: 128m
+        nginx.ingress.kubernetes.io/proxy-buffering: "off"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+        nginx.ingress.kubernetes.io/session-cookie-expires: "172800"
+        nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
+        nginx.ingress.kubernetes.io/session-cookie-name: route
+        nginx.ingress.kubernetes.io/upstream-hash-by: $binary_remote_addr
+        nginx.ingress.kubernetes.io/websocket-services: open-webui
+      labels:
+        app.kubernetes.io/component: open-webui
+        app.kubernetes.io/instance: open-webui
+        app.kubernetes.io/managed-by: Manifest
+      name: open-webui-ollama-api
+      namespace: myai01
+    spec:
+      ingressClassName: nginx
+      rules:
+      - host: myai01-ollama-api.abiwot-lab.com
+        http:
+          paths:
+          - backend:
+              service:
+                name: open-webui-ollama
+                port:
+                  name: http
+            path: /
+            pathType: Prefix
+  
+  ## -- Ingress to expose OpenAI API
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      annotations:
+        meta.helm.sh/release-name: open-webui
+        meta.helm.sh/release-namespace: myai01
+        nginx.ingress.kubernetes.io/affinity: cookie
+        nginx.ingress.kubernetes.io/backend-protocol: http
+        nginx.ingress.kubernetes.io/proxy-body-size: 128m
+        nginx.ingress.kubernetes.io/proxy-buffering: "off"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+        nginx.ingress.kubernetes.io/session-cookie-expires: "172800"
+        nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
+        nginx.ingress.kubernetes.io/session-cookie-name: route
+        nginx.ingress.kubernetes.io/upstream-hash-by: $binary_remote_addr
+        nginx.ingress.kubernetes.io/websocket-services: open-webui
+      labels:
+        app.kubernetes.io/component: open-webui
+        app.kubernetes.io/instance: open-webui
+        app.kubernetes.io/managed-by: Manifest
+      name: open-webui-openai-pipelines
+      namespace: myai01
+    spec:
+      ingressClassName: nginx
+      rules:
+      - host: myai01-openai-pipelines.abiwot-lab.com
+        http:
+          paths:
+          - backend:
+              service:
+                name: open-webui-pipelines
+                port:
+                  name: http
+            path: /
+            pathType: Prefix
 
 ## -- Configure database URL, needed to work with Postgres
 databaseUrl: postgresql://open-webui:0p3n-w3bu!@open-webui-postgres:5432/open-webui
