@@ -30,14 +30,18 @@ The deployment consists of the following components:
    helm repo update
 
    # Deploy using Helm
-   helm upgrade --install openwebui ./namespace/myai01/helm/openwebui \
-     -f ./namespace/myai01/helm/openwebui/helm-openwebui-override-values-tls.yaml \
-     -n myai01 --create-namespace
+   helm upgrade --install open-webui open-webui/open-webui /
+   -n myai01 --create-namespace -f /
+   ./namespace/myai01/helm/openwebui/helm-openwebui-override-values-tls
    ```
 
 2. **Verify Deployment**
 
    ```bash
+   # Wait for OpenWebUI pods to deploy
+   kubectl wait -n myai01 --for=condition=Available deployment /
+   --selector=app.kubernetes.io/instance=open-webui --timeout=300s
+   
    # Check all pods are running
    kubectl get pods -n myai01
 
@@ -61,33 +65,30 @@ The backup system is designed to automatically back up the PostgreSQL database t
 
 The backup system uses the following configuration files:
 
-- `configmap-postgres-backup-scripts.yaml`: Contains the backup script
-- `configmap-postgres-backup-scripts-variables.yaml`: Contains environment variables
-- `secret-postgres-backup-secrets.yaml`: Contains sensitive credentials
-- `cronjob-postgres-backup.yaml`: Scheduled backup job
-- `job-postgres-backup-manual.yaml`: Manual backup job
-- `deployment-postgres-restore.yaml`: Restore utility
-- `pvc-postgres-backup.yaml`: Persistent Volume Claim for backup storage
+- `10-pvc-postgres-backup.yaml`: Persistent Volume Claim for backup storage
+- `20-secret-postgres-backup-secrets.yaml`: Contains sensitive credentials
+- `30-configmap-postgres-backup-scripts.yaml`: Contains the backup script
+- `30-configmap-postgres-backup-scripts-variables.yaml`: Contains environment variables
+- `40-cronjob-postgres-backup.yaml`: Scheduled backup job
+- `./adhoc/job-postgres-backup-manual.yaml`: Manual backup job
+- `./restore/deployment-postgres-restore.yaml`: Restore utility
 
 ### Deployment Steps
 
-1. **Create the Persistent Volume Claim**
+**Note**: Ensure the values in `20-secret-postgres-backup-secrets.yaml` are correctly set with your S3 credentials and PostgreSQL database connection details.
+
+1. **Logical Order of Operations**
+
+   - Create a Persistent Volume Claim (PVC) for backup storage
+   - Apply the backup configuration files
+   - Verify the backup CronJob is running
+
+2. **Deploy Postgres Backup Cron**
 
    Before running any backup jobs, you need to create the PVC:
 
    ```bash
-   kubectl apply -f ./namespace/myai01/manifests/postgresql/backup/pvc-postgres-backup.yaml
-   ```
-
-2. **Apply Backup Configuration**
-
-   ```bash
-   kubectl apply -f ./namespace/myai01/manifests/postgresql/backup/configmap-postgres-backup-scripts.yaml
-   kubectl apply -f ./namespace/myai01/manifests/postgresql/backup/configmap-postgres-backup-scripts-variables.yaml
-   kubectl apply -f ./namespace/myai01/manifests/postgresql/backup/secret-postgres-backup-secrets.yaml
-   kubectl apply -f ./namespace/myai01/manifests/postgresql/backup/cronjob-postgres-backup.yaml
-   kubectl apply -f ./namespace/myai01/manifests/postgresql/backup/job-postgres-backup-manual.yaml
-   kubectl apply -f ./namespace/myai01/manifests/postgresql/backup/deployment-postgres-restore.yaml
+   kubectl apply -f ./namespace/myai01/manifests/openwebui/postgresql/
    ```
 
 ### Technical Implementation
@@ -127,7 +128,7 @@ The backup system uses the following configuration files:
    To trigger a manual backup:
 
    ```bash
-   kubectl create job --from=cronjob/postgres-backup-cronjob manual-backup-$(date +%s) -n myai01
+   kubectl apply ./namespace/myai01/manifest/openwebui/postgres/backukp adhoc/job-postgres-backup-manual.yaml
    ```
 
 3. **Monitoring Backups**
@@ -145,7 +146,15 @@ The backup system uses the following configuration files:
 
 ### Restore Process
 
-1. **Access the Restore Utility**
+1. **Deploy Restore Utility**
+
+   The restore utility is deployed as a separate pod that can be accessed to restore backups from S3 or local storage.
+
+   ```bash
+   kubectl apply -f ./namespace/myai01/manifest/openwebui/postgres/restore/deployment-postgres-restore.yaml
+   ```
+
+2. **Access the Restore Utility**
 
    ```bash
    # Get the pod name
@@ -155,21 +164,21 @@ The backup system uses the following configuration files:
    kubectl exec -it <restore-pod-name> -n myai01 -- /bin/bash
    ```
 
-2. **List Available Backups**
+3. **List Available Backups**
 
    ```bash
    # Inside the pod
    /scripts/list-backups.sh
    ```
 
-3. **Download Backup from S3 (if needed)**
+4. **Download Backup from S3 (if needed)**
 
    ```bash
    # Inside the pod
    /scripts/download-from-s3.sh <backup-filename>
    ```
 
-4. **Restore from Backup**
+5. **Restore from Backup**
 
    ```bash
    # Inside the pod
@@ -240,3 +249,26 @@ models:
 ### Scaling Resources
 
 Resource requests and limits can be adjusted in the Helm values file based on workload requirements.
+
+## API Access
+
+If you need to access your OpenWebUI API, you need to configure the following components:
+
+- **DNS**: Ensure your DNS can resolve the URLs within the Helm values file.
+  - **ollamaUrls**: Set to point to your external LB
+  - **openwebuiUrls**: Set to point to your external LB
+- **External LB**: Ensure your external LB has entries to accept traffic for the OpenWebUI and Ollama URLs.
+- **Ingress**: Ensure your ingress controller is configured to route traffic to the OpenWebUI and Ollama services.
+
+### RooCode Connection - Example
+
+To connect RooCode to your OpenWebUI API, you can use the follow these basic steps:
+
+1. **Install RooCode**: Follow the RooCode installation instructions.
+2. **Configure RooCode**:
+   - Open the RooCode settings
+   - `API Provider`: "Ollama"
+   - `Base URL`: Set to the OpenWebUI API URL
+   - `Model ID`: Set to the model you want to use (e.g., `qwen3:14b`)
+   - Click "Save"
+3. **Test Connection**: Use the RooCode interface to test the connection to the OpenWebUI API.
